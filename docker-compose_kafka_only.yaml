@@ -1,0 +1,61 @@
+version: '3.8'
+services:
+  #---------------------------------#
+  #  Kafka zookeeper and kafka
+  #---------------------------------#
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - epg_network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.request.logger=DEBUG"
+    ports:
+      - "9092:9092"
+    networks:
+      - epg_network
+    volumes:
+      - kafka_data:/var/lib/kafka
+
+  #---------------------------------#
+  #  Mockup consumer predictions
+  #---------------------------------#
+  # mockup_consumer_predictions:
+  #  build:
+  #    context: .
+  #    dockerfile: ./mockup_consumer_predictions/Dockerfile
+  #  command: python app.py
+  #  environment:
+  #    ON_CLOUD: "True"
+  #  networks:
+  #    - epg_network
+  #  volumes:
+  #    - "${MOCKUP_CONSUMER_PREDICTIONS_VOLUME}:/etc/configmaps"
+  #  depends_on:
+  #    - kafka
+
+volumes:
+  kafka_data:
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge

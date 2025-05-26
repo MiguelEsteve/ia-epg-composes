@@ -1,0 +1,368 @@
+services:
+  #---------------------------------#
+  #  Kafka zookeeper and kafka
+  #---------------------------------#
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - epg_network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - epg_network
+    volumes:
+      - kafka_data:/var/lib/kafka
+
+#---------------------------------#
+#  Assetizer
+#---------------------------------#
+  assetizer:
+    build:
+      context: ../ia-vct-assetizer
+      dockerfile: Dockerfile
+    ports:
+      - "${ASSETIZER_PORT}:8050"
+    # command: python app.py
+    command: gunicorn -w 1 -b 0.0.0.0:8050 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      PROMETHEUS_MULTIPROC_DIR: "/metrics/assetizer"
+      ASSETIZER_PORT: "${ASSETIZER_PORT}"
+      ASSETIZER_VOLUME: "${ASSETIZER_VOLUME}"
+      ASSETIZER_LOGS: "${ASSETIZER_LOGS}"
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${ASSETIZER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${ASSETIZER_LOGS}:/var/log/assetizer"
+      - "${ASSETIZER_METRICS}:/metrics"
+
+
+#---------------------------------#
+#  Controller DB Server
+#---------------------------------#
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      # - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+      - "${CONTROLLER_DB_SERVER_PORT}:8035"
+    # command: python app.py
+    # command: gunicorn -w 1 -b 0.0.0.0:${CONTROLLER_DB_SERVER_PORT} --timeout 3600 app:app
+    command: gunicorn -w 1 -b 0.0.0.0:8035 --timeout 3600 app:app
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/var/log/controller_db_server"
+    depends_on:
+      - controller_db
+
+  #---------------------------------#
+  # Controller DB
+  #---------------------------------#
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+  #---------------------------------#
+  #  Transcript
+  #---------------------------------#
+  transcript:
+    build:
+      context: ../ia-vct-transcript
+      dockerfile: Dockerfile
+    ports:
+      - "${TRANSCRIPT_PORT}:8028"
+    # command: python app.py
+    command: gunicorn -w 2 -b 0.0.0.0:8028 --timeout 3600 app:app
+    # command: tail -f /dev/null
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      ON_CLOUD: "True"
+      TRANSCRIPT_PORT: "${TRANSCRIPT_PORT}"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    runtime: nvidia
+    networks:
+      - epg_network
+    volumes:
+      - "${TRANSCRIPT_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${TRANSCRIPT_LOGS}:/var/log/transcript"
+#---------------------------------#
+#  Downloader
+#---------------------------------#
+  downloader:
+    build:
+      context: ../ia-vct-downloader
+      dockerfile: Dockerfile
+    ports:
+      - "${DOWNLOADER_PORT}:8039"
+    # command: python app.py
+    command: gunicorn -w 1 -b 0.0.0.0:8039 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      DOWNLOADER_PORT: "${DOWNLOADER_PORT}"
+      DOWNLOADER_VOLUME: "${DOWNLOADER_VOLUME}"
+      DOWNLOADER_LOGS: "${DOWNLOADER_LOGS}"
+      PROMETHEUS_MULTIPROC_DIR: "/metrics/downloader"
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${DOWNLOADER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${DOWNLOADER_LOGS}:/logs"
+      - "${DOWNLOADER_METRICS}:/metrics"
+      - "${DOWNLOADER_LOGS}:/var/log/downloader"
+    depends_on:
+      - controller_db_server
+
+  #---------------------------------#
+  #  Controller
+  #---------------------------------#
+  controller:
+    build:
+      context: ../ia-vct-controller
+      dockerfile: Dockerfile
+    # ports:
+    #  - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+    command: python app.py
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: 'True'
+      CONTROLLER_PORT: "${CONTROLLER_PORT}"
+      CONTROLLER_LOGS: "${CONTROLLER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_SECRETS_ROOT}:/etc/secrets"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${CONTROLLER_LOGS}:/var/log/controller"
+
+    depends_on:
+      - controller_db_server
+  #---------------------------------#
+  #  mockup pipeline
+  #---------------------------------#
+  pipeline:
+    build:
+      context: ../ia-vct-mockup_pipeline
+      dockerfile: Dockerfile
+    ports:
+      - "${MOCKUP_PIPELINE_PORT}:${MOCKUP_PIPELINE_PORT}"
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_PIPELINE_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+#---------------------------------#
+#  Recorder
+#---------------------------------#
+  recorder:
+    build:
+      context: ../ia-vct-recorder
+      dockerfile: Dockerfile
+    ports:
+      - "${RECORDER_PORT}:8060"
+    # command: python app.py
+    command: gunicorn -w 1 -b 0.0.0.0:8060 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      RECORDER_PORT: "${RECORDER_PORT}"
+      RECORDER_VOLUME: "${RECORDER_VOLUME}"
+      RECORDER_LOGS: "${RECORDER_LOGS}"
+      PROMETHEUS_MULTIPROC_DIR: '/metrics/recorder'
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${RECORDER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${RECORDER_METRICS}:/metrics"
+      - "${RECORDER_LOGS}:/var/log/recorder"
+    depends_on:
+      - controller_db_server
+      - assetizer
+      - transcript
+
+#---------------------------------#
+#  Mockup adminer
+#---------------------------------#
+
+  adminer: # Service that allows to check the db
+    image: adminer
+    networks:
+      - epg_network
+    restart: always
+    ports:
+      - 8080:8080
+
+  #---------------------------------#
+  #  Mockup consumer predictions
+  #---------------------------------#
+  mockup_consumer_predictions:
+    build:
+      context: ../ia-vct-mockup_controller_predictions
+      dockerfile: Dockerfile
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_CONSUMER_PREDICTIONS_VOLUME}:/etc/configmaps"
+    depends_on:
+      - kafka
+
+
+#---------------------------------#
+#  PROMETHEUS
+#---------------------------------#
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"  # Puerto expuesto para acceder a Prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml  # Cargar archivo de configuración
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    networks:
+      - epg_network
+
+#---------------------------------#
+#  GRAFANA
+#---------------------------------#
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - epg_network
+    depends_on:
+      - prometheus
+
+  #---------------------------------#
+  #  elasticsearch
+  #---------------------------------#
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false  # Deshabilita la seguridad para pruebas locales
+    ports:
+      - "9200:9200"
+    networks:
+      - epg_network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.2
+    container_name: logstash
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "5044:5044"
+    networks:
+      - epg_network
+
+  #---------------------------------#
+  #  kibana
+  #---------------------------------#
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - epg_network
+
+
+volumes:
+  kafka_data:
+
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge

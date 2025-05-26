@@ -1,0 +1,24 @@
+services:
+#---------------------------------#
+#  Mockup consumer
+#---------------------------------#
+  mockup_consumer:
+    build:
+      context: ../ia-vct-mockup_consumer
+      dockerfile: Dockerfile
+    command: python app.py
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      MOCKUP_CONSUMER_VOLUME: "${MOCKUP_CONSUMER_VOLUME}"
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_CONSUMER_VOLUME}:/etc/configmaps"
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge
