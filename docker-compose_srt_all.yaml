@@ -1,0 +1,56 @@
+services:
+  srt-id3-gstreamer-caller:
+    build:
+        context: ../ia-vct-srt_gstreamer
+        dockerfile: dockerfile
+    environment:
+      ID3_HZ: 2.0
+      SRT_HOST: 127.0.0.1
+      SRT_PORT: 1231
+    # network_mode: host   # Linux; on Mac/Win omit this and use host.docker.internal
+    networks:
+      - epg_network
+
+  circulars_db:
+    image: postgres:16
+    container_name: ia-vct-circular_db
+    environment:
+      POSTGRES_DB: circulars_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - epg_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  srt:
+    build:
+        context: ../ia-vct-srt
+        dockerfile: dockerfile
+    container_name: ia-vct-srt
+    environment:
+      ON_CLOUD: "True"
+      TEST_MODE: "False"
+    ports:
+      - "8060:8060"
+    networks:
+      - epg_network
+    depends_on:
+      circulars_db:
+        condition: service_healthy
+    volumes:
+      - "/home/miguel/repos/ia-vct-srt/configs:/etc/configmaps"
+      - "/home/miguel/repos/ia-vct-srt/secrets:/etc/secrets"
+      - "/home/miguel/prueba16:/workspace_downloader"
+      - "/home/miguel/logs/srt:/var/log/srt"
+
+networks:
+  epg_network:
+    driver: bridge
+
+volumes:
+  pgdata:

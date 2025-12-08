@@ -1,0 +1,21 @@
+services:
+  srt-id3-gstreamer-caller:
+    build:
+        context: ../ia-vct-srt_gstreamer
+        dockerfile: dockerfile
+    environment:
+      ID3_HZ: 2.0
+      SRT_HOST: 127.0.0.1
+      SRT_PORT: 1231
+    # network_mode: host   # Linux; on Mac/Win omit this and use host.docker.internal
+    networks:
+      - epg_network
+
+networks:
+  epg_network:
+    external: true
+    name: epg_network
+    # driver: bridge
+
+volumes:
+  pgdata:

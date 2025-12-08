@@ -1,0 +1,40 @@
+services:
+#---------------------------------#
+#  Pipeline
+#---------------------------------#
+  pipeline:
+    build:
+      context: ../ia-vct-pipeline
+      dockerfile: Dockerfile
+    ports:
+      # - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+      - "${PIPELINE_PORT}:5000"
+    # command: python app.py
+    # command: gunicorn -w 1 -b 0.0.0.0:${CONTROLLER_DB_SERVER_PORT} --timeout 3600 app:app
+    command: gunicorn -w 1 -b 0.0.0.0:5000 --timeout 3600 app:app
+    # command: ["gunicorn", "app:app", "--bind", "0.0.0.0:5000", "--workers=1", "--log-level", "debug"]
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      TEST_MODE: "False"
+      PIPELINE_PORT: "${PIPELINE_PORT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${PIPELINE_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/etc/secrets"
+
+
+volumes:
+  kafka_data:
+
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge
