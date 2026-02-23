@@ -1,0 +1,33 @@
+services:
+
+  ocr:
+    build:
+      context: ../ia-vct-ocr
+      dockerfile: Dockerfile
+    container_name: ocr
+    environment:
+        TEST_MODE: 'False'
+        ON_CLOUD: 'True'
+        FLASK_HOST: "${OCR_HOST}"
+        FLASK_PORT: "${OCR_PORT}"
+        AZURE_VISION_KEY:  "${OCR_AZURE_VISION_KEY}"
+        AZURE_VISION_ENDOINT: "${OCR_AZURE_VISION_ENDPOINT}"
+        API_REVERSE_PROXY: "${OCR_API_REVERSE_PROXY}"
+        NVIDIA_VISIBLE_DEVICES: 0
+        LOGGING_LEVEL: "${LOGGING_LEVEL}"
+        LOGSTASH_PORT: "${LOGSTASH_PORT}"
+        EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    ports:
+      - "7007:7007"
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${OCR_VOLUME}:/etc/configmaps:ro"
+    # command: ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "1", "-b", "0.0.0.0:7007", "app:app"]
+    command: python3 app.py
+    runtime: nvidia
+    networks:
+      - epg_network
+
+networks:
+  epg_network:
+    driver: bridge

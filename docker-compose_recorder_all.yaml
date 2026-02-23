@@ -1,0 +1,197 @@
+services:
+
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      # - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+      - "${CONTROLLER_DB_SERVER_PORT}:8035"
+    # command: python app.py
+    # command: gunicorn -w 1 -b 0.0.0.0:${CONTROLLER_DB_SERVER_PORT} --timeout 3600 app:app
+    command: gunicorn -w 1 -b 0.0.0.0:8035 --timeout 3600 app:app
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    # network_mode: host
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/var/log/controller_db_server"
+    depends_on:
+      - controller_db
+
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    networks:
+      - epg_network
+    # network_mode: host
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+
+  assetizer:
+    build:
+      context: ../ia-vct-assetizer
+      dockerfile: Dockerfile
+    ports:
+      - "${ASSETIZER_PORT}:8050"
+    # network_mode: host
+    command: gunicorn -w 1 -b 0.0.0.0:8050 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      PROMETHEUS_MULTIPROC_DIR: "/metrics/assetizer"
+      ASSETIZER_PORT: "${ASSETIZER_PORT}"
+      ASSETIZER_VOLUME: "${ASSETIZER_VOLUME}"
+      ASSETIZER_LOGS: "${ASSETIZER_LOGS}"
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${ASSETIZER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${ASSETIZER_LOGS}:/var/log/assetizer"
+      - "${ASSETIZER_METRICS}:/metrics"
+
+  transcript:
+    build:
+      context: ../ia-vct-transcript
+      dockerfile: Dockerfile
+    ports:
+      - "${TRANSCRIPT_PORT}:8028"
+    command: gunicorn -w 2 -b 0.0.0.0:8028 --timeout 3600 app:app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      ON_CLOUD: "True"
+      TRANSCRIPT_PORT: "${TRANSCRIPT_PORT}"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    runtime: nvidia
+    networks:
+      - epg_network
+    # network_mode: host
+    volumes:
+      - "${TRANSCRIPT_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${TRANSCRIPT_LOGS}:/var/log/transcript"
+
+  adminer: # Service that allows to check the db
+    image: adminer
+    # network_mode: host
+    networks:
+      - epg_network
+    restart: always
+    ports:
+      - 8080:8080
+
+  recorder:
+    build:
+      context: ../ia-vct-recorder
+      dockerfile: Dockerfile
+    ports:
+      - "${RECORDER_PORT}:8060"
+    # network_mode: host
+    command: gunicorn -w 1 -b 0.0.0.0:8060 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      RECORDER_PORT: "${RECORDER_PORT}"
+      RECORDER_VOLUME: "${RECORDER_VOLUME}"
+      RECORDER_LOGS: "${RECORDER_LOGS}"
+      PROMETHEUS_MULTIPROC_DIR: '/metrics/recorder'
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${RECORDER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${RECORDER_METRICS}:/metrics"
+      - "${RECORDER_LOGS}:/var/log/recorder"
+
+  ocr:
+    build:
+      context: ../ia-vct-ocr
+      dockerfile: Dockerfile
+    container_name: ocr
+    environment:
+        TEST_MODE: 'False'
+        ON_CLOUD: 'True'
+        FLASK_HOST: "${OCR_HOST}"
+        FLASK_PORT: "${OCR_PORT}"
+        AZURE_VISION_KEY:  "${OCR_AZURE_VISION_KEY}"
+        AZURE_VISION_ENDOINT: "${OCR_AZURE_VISION_ENDPOINT}"
+        API_REVERSE_PROXY: "${OCR_API_REVERSE_PROXY}"
+        NVIDIA_VISIBLE_DEVICES: 0
+        LOGGING_LEVEL: "${LOGGING_LEVEL}"
+        LOGSTASH_PORT: "${LOGSTASH_PORT}"
+        EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    ports:
+      - "7007:7007"
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${OCR_VOLUME}:/etc/configmaps:ro"
+    # command: ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "2", "-b", "0.0.0.0:7007", "main:app"]
+    command: python3 app.py
+    runtime: nvidia
+    networks:
+      - epg_network
+
+  sbd:
+    build:
+      context: ../ia-vct-sbd
+      dockerfile: Dockerfile
+    container_name: sbd
+    environment:
+      TEST_MODE: 'False'
+      ON_CLOUD: 'True'
+      FLASK_HOST: "${SBD_HOST}"
+      FLASK_PORT: "${SBD_PORT}"
+      API_REVERSE_PROXY: "${SBD_API_REVERSE_PROXY}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    ports:
+      - "9009:9009"
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${SBD_VOLUME}:/etc/configmaps:ro"
+    command: ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "2", "-b", "0.0.0.0:9009", "app:main"]
+
+
+volumes:
+  kafka_data:
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge

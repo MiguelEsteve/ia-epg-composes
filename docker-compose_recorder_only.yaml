@@ -1,0 +1,35 @@
+services:
+#---------------------------------#
+#  Recorder
+#---------------------------------#
+  recorder:
+    build:
+      context: ../ia-vct-recorder
+      dockerfile: Dockerfile
+    ports:
+      - "${RECORDER_PORT}:8060"
+    network_mode: host
+    command: gunicorn -w 1 -b 0.0.0.0:8060 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      RECORDER_PORT: "${RECORDER_PORT}"
+      RECORDER_VOLUME: "${RECORDER_VOLUME}"
+      RECORDER_LOGS: "${RECORDER_LOGS}"
+      PROMETHEUS_MULTIPROC_DIR: '/metrics/recorder'
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    #networks:
+    #  - epg_network
+    volumes:
+      - "${RECORDER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${RECORDER_METRICS}:/metrics"
+      - "${RECORDER_LOGS}:/var/log/recorder"
+
+
+#networks:
+#  epg_network:
+#    driver: bridge

@@ -1,26 +1,4 @@
 services:
-  srt-caller-la1:
-    build:
-      context: ../ia-vct-srt_gstreamer
-      dockerfile: dockerfile
-   #  env_file: .env   # contains SRT_HOST, common knobs
-    environment:
-      ID3_HZ: 2.0
-      CHANNEL: "La1.es"
-      SRT_HOST: "ia-vct-srt"
-      SRT_PORT: 1231
-      MP4_PATH: "/media/La1.es_20250922_155000.mp4"
-      # MP4_PATH: "/media/B.mp4"
-      # MP4_PATH: "/media/C.mp4"
-    volumes:
-      - /home/miguel/temp/La1.es_20250922_155000.mp4:/media/La1.es_20250922_155000.mp4:ro
-      # - /home/miguel/temp/B.mp4:/media/B.mp4:ro
-      #  - /home/miguel/temp/C.mp4:/media/C.mp4:ro
-    networks: [epg_network]
-    depends_on:
-      - srt
-   #  network_mode: host
-
   circulars_db:
     image: postgres:16
     container_name: ia-vct-circular_db
@@ -31,7 +9,7 @@ services:
     volumes:
       - /home/miguel/circulars_db:/var/lib/postgresql/data
     networks:
-      - epg_network
+      - srt_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h localhost"]
       interval: 5s
@@ -62,7 +40,7 @@ services:
     ports:
       - "9060:9060"
     networks:
-      - epg_network
+      - srt_network
     depends_on:
       circulars_db:
         condition: service_healthy
@@ -70,15 +48,15 @@ services:
   adminer: # Service that allows to check the db
     image: adminer
     networks:
-      - epg_network
+      - srt_network
     restart: always
     ports:
       - 8080:8080
 
 networks:
-  epg_network:
-    # external: true
-    name: epg_network
+  srt_network:
+    external: true
+    name: srt_network
     driver: bridge
 
 volumes:

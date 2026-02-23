@@ -1,0 +1,33 @@
+services:
+  transcript:
+    build:
+      context: ../ia-vct-transcript
+      dockerfile: Dockerfile
+    ports:
+      - "${TRANSCRIPT_PORT}:8028"
+    command: gunicorn -w 2 -b 0.0.0.0:8028 --timeout 3600 app:app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      ON_CLOUD: "True"
+      TRANSCRIPT_PORT: "${TRANSCRIPT_PORT}"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    runtime: nvidia
+    networks:
+      - epg_network
+    volumes:
+      - "${TRANSCRIPT_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${TRANSCRIPT_LOGS}:/var/log/transcript"
+networks:
+  epg_network:
+    driver: bridge

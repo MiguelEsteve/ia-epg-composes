@@ -1,0 +1,89 @@
+services:
+
+
+#---------------------------------#
+#  Controller DB Server
+#---------------------------------#
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      # - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+      - "${CONTROLLER_DB_SERVER_PORT}:8035"
+    # command: python app.py
+    # command: gunicorn -w 1 -b 0.0.0.0:${CONTROLLER_DB_SERVER_PORT} --timeout 3600 app:app
+    command: gunicorn -w 1 -b 0.0.0.0:8035 --timeout 3600 app:app
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/var/log/controller_db_server"
+    depends_on:
+      - controller_db
+
+  #---------------------------------#
+  # Controller DB
+  #---------------------------------#
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+
+
+#---------------------------------#
+#  Assetizer
+#---------------------------------#
+  assetizer:
+    build:
+      context: ../ia-vct-assetizer
+      dockerfile: Dockerfile
+    ports:
+      - "${ASSETIZER_PORT}:8050"
+    command: gunicorn -w 1 -b 0.0.0.0:8050 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      PROMETHEUS_MULTIPROC_DIR: "/metrics/assetizer"
+      ASSETIZER_PORT: "${ASSETIZER_PORT}"
+      ASSETIZER_VOLUME: "${ASSETIZER_VOLUME}"
+      ASSETIZER_LOGS: "${ASSETIZER_LOGS}"
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${ASSETIZER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${ASSETIZER_LOGS}:/var/log/assetizer"
+      - "${ASSETIZER_METRICS}:/metrics"
+
+
+volumes:
+  kafka_data:
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge

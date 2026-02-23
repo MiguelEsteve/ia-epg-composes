@@ -1,0 +1,26 @@
+services:
+
+  sbd:
+    build:
+      context: ../ia-vct-sbd
+      dockerfile: Dockerfile
+    container_name: sbd
+    environment:
+      TEST_MODE: 'False'
+      ON_CLOUD: 'True'
+      FLASK_HOST: "${SBD_HOST}"
+      FLASK_PORT: "${SBD_PORT}"
+      API_REVERSE_PROXY: "${SBD_API_REVERSE_PROXY}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    ports:
+      - "9009:9009"
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${SBD_VOLUME}:/etc/configmaps:ro"
+    command: ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "2", "-b", "0.0.0.0:9009", "app:app"]
+
+networks:
+  epg_network:
+    driver: bridge

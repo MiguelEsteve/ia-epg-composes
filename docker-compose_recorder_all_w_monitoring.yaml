@@ -1,0 +1,185 @@
+services:
+
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      # - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+      - "${CONTROLLER_DB_SERVER_PORT}:8035"
+    # command: python app.py
+    # command: gunicorn -w 1 -b 0.0.0.0:${CONTROLLER_DB_SERVER_PORT} --timeout 3600 app:app
+    command: gunicorn -w 1 -b 0.0.0.0:8035 --timeout 3600 app:app
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    # networks:
+    #  - epg_network
+    network_mode: host
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/var/log/controller_db_server"
+    depends_on:
+      - controller_db
+
+  #---------------------------------#
+  # Controller DB
+  #---------------------------------#
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    # networks:
+    #  - epg_network
+    network_mode: host
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+
+
+  assetizer:
+    build:
+      context: ../ia-vct-assetizer
+      dockerfile: Dockerfile
+    ports:
+      - "${ASSETIZER_PORT}:8050"
+    network_mode: host
+    command: gunicorn -w 1 -b 0.0.0.0:8050 --timeout 3600 app:app
+    environment:
+      ON_CLOUD: 'True'
+      TEST_MODE: 'False'
+      PROMETHEUS_MULTIPROC_DIR: "/metrics/assetizer"
+      ASSETIZER_PORT: "${ASSETIZER_PORT}"
+      ASSETIZER_VOLUME: "${ASSETIZER_VOLUME}"
+      ASSETIZER_LOGS: "${ASSETIZER_LOGS}"
+      FFMPEG_ROOT: "${FFMPEG_ROOT}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    #networks:
+    #  - epg_network
+    volumes:
+      - "${ASSETIZER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${ASSETIZER_LOGS}:/var/log/assetizer"
+      - "${ASSETIZER_METRICS}:/metrics"
+
+
+  transcript:
+    build:
+      context: ../ia-vct-transcript
+      dockerfile: Dockerfile
+    ports:
+      - "${TRANSCRIPT_PORT}:8028"
+    command: gunicorn -w 2 -b 0.0.0.0:8028 --timeout 3600 app:app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      ON_CLOUD: "True"
+      TRANSCRIPT_PORT: "${TRANSCRIPT_PORT}"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    runtime: nvidia
+    # networks:
+    #  - epg_network
+    network_mode: host
+    volumes:
+      - "${TRANSCRIPT_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${TRANSCRIPT_LOGS}:/var/log/transcript"
+
+
+  adminer: # Service that allows to check the db
+    image: adminer
+    network_mode: host
+    #networks:
+    #  - epg_network
+    restart: always
+    ports:
+      - 8080:8080
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"  # Puerto expuesto para acceder a Prometheus
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml  # Cargar archivo de configuración
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    # networks:
+    #  - epg_network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    network_mode: host
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    # networks:
+    #  - epg_network
+    depends_on:
+      - prometheus
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false  # Deshabilita la seguridad para pruebas locales
+    ports:
+      - "9200:9200"
+    network_mode : host
+    # networks:
+    #  - epg_network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.2
+    container_name: logstash
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "5044:5044"
+    # networks:
+    #  - epg_network
+    network_mode: host
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    # networks:
+    #  - epg_network
+    network_mode: host
+
+volumes:
+  kafka_data:
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+#networks:
+#  epg_network:
+#    driver: bridge
