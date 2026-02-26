@@ -1,0 +1,188 @@
+version: '3.8'
+services:
+  #---------------------------------#
+  #  Kafka zookeeper and kafka
+  #---------------------------------#
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - epg_network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - epg_network
+    volumes:
+      - kafka_data:/var/lib/kafka
+
+  #---------------------------------#
+  #  Mockup consumer predictions
+  #---------------------------------#
+  mockup_consumer_predictions:
+    build:
+      context: ../ia-vct-mockup_controller_predictions
+      dockerfile: Dockerfile
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_CONSUMER_PREDICTIONS_VOLUME}:/etc/configmaps"
+    depends_on:
+      - kafka
+
+#---------------------------------#
+#  Controller DB Server
+#---------------------------------#
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+    command: python app.py
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/logs"
+    depends_on:
+      - controller_db
+
+  #---------------------------------#
+  # Controller DB
+  #---------------------------------#
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+
+  #---------------------------------#
+  #  Controller
+  #---------------------------------#
+  controller:
+    build:
+      context: ../ia-vct-controller
+      dockerfile: Dockerfile
+    # ports:
+    #  - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+    command: python app.py
+    # command: tail -f /dev/null
+    environment:
+      ON_CLOUD: 'True'
+      CONTROLLER_PORT: "${CONTROLLER_PORT}"
+      CONTROLLER_LOGS: "${CONTROLLER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_SECRETS_ROOT}:/etc/secrets"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+    depends_on:
+      - controller_db_server
+
+  #---------------------------------#
+  #  mockup downloader
+  #---------------------------------#
+  mockup_downloader:
+    build:
+      context: ../ia-vct-mockup_downloader
+      dockerfile: Dockerfile
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      NUM_ASSETS_FAKE: "${NUM_ASSETS_FAKE}"
+      GENERATE_FAKE_TS_FILES: "${GENERATE_FAKE_TS_FILES}"
+      NUM_TS_FILES_PER_ASSET_FAKE: "${NUM_TS_FILES_PER_ASSET_FAKE}"
+    networks:
+      - epg_network
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${MOCKUP_DOWNLOADER_VOLUME}:/etc/configmaps"
+    depends_on:
+      - controller_db_server
+
+  #---------------------------------#
+  #  mockup pipeline
+  #---------------------------------#
+  mockup_pipeline:
+    build:
+      context: ../ia-vct-mockup_pipeline
+      dockerfile: Dockerfile
+    ports:
+      - "${MOCKUP_PIPELINE_PORT}:${MOCKUP_PIPELINE_PORT}"
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_PIPELINE_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+
+  #---------------------------------#
+  #  Mockup adminer
+  #---------------------------------#
+
+  adminer: # Service that allows to check the db
+    image: adminer
+    networks:
+      - epg_network
+    restart: always
+    ports:
+      - 8080:8080
+
+
+volumes:
+  kafka_data:
+
+#---------------------------------#
+#  epg network
+#---------------------------------#
+networks:
+  epg_network:
+    driver: bridge

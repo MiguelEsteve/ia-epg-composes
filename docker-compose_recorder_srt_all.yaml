@@ -250,4 +250,5 @@ services:
 
 networks:
   epg_network:
+    external: True
     driver: bridge
