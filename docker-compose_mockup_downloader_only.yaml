@@ -1,0 +1,84 @@
+services:
+#---------------------------------#
+#  Controller DB Server
+#---------------------------------#
+  controller_db_server:
+    build:
+      context: ../ia-vct-controller_db_server
+      dockerfile: Dockerfile
+    ports:
+      - "${CONTROLLER_DB_SERVER_PORT}:${CONTROLLER_DB_SERVER_PORT}"
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      CONTROLLER_DB_SERVER_PORT: "${CONTROLLER_DB_SERVER_PORT}"
+      CONTROLLER_DB_SERVER_LOGS: "${CONTROLLER_DB_SERVER_LOGS}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_SERVER_VOLUME}:/etc/configmaps"
+      - "${CONTROLLER_DB_SECRETS_ROOT}:/etc/secrets"
+      - "${CONTROLLER_DB_SERVER_LOGS}:/logs"
+    depends_on:
+      - controller_db
+
+  #---------------------------------#
+  # Controller DB
+  #---------------------------------#
+  controller_db:
+    build:
+      context: ../ia-vct-controller_db
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: controller_db
+    networks:
+      - epg_network
+    volumes:
+      - "${CONTROLLER_DB_ROOT}:/var/lib/postgresql/data"
+
+
+  #---------------------------------#
+  #  mockup downloader
+  #---------------------------------#
+  mockup_downloader:
+    build:
+      context: ../ia-vct-mockup_downloader
+      dockerfile: Dockerfile
+    command: python app.py
+    environment:
+      ON_CLOUD: "True"
+      NUM_ASSETS_FAKE: "${NUM_ASSETS_FAKE}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL}"
+      LOGSTASH_PORT: "${LOGSTASH_PORT}"
+      EXPOSE_LOGSTASH: "${EXPOSE_LOGSTASH}"
+    networks:
+      - epg_network
+    volumes:
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+      - "${MOCKUP_DOWNLOADER_VOLUME}:/etc/configmaps"
+    depends_on:
+      - controller_db_server
+
+  #---------------------------------#
+  #  Mockup adminer
+  #---------------------------------#
+
+  adminer: # Service that allows to check the db
+    image: adminer
+    networks:
+      - epg_network
+    restart: always
+    ports:
+      - 8080:8080
+
+  #---------------------------------#
+  #  epg network
+  #---------------------------------#
+networks:
+  epg_network:
+    driver: bridge
