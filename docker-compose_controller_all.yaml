@@ -4,7 +4,8 @@ services:
   #  Kafka zookeeper and kafka
   #---------------------------------#
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    # image: confluentinc/cp-zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.3.0
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -15,7 +16,8 @@ services:
       - epg_network
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    #image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.3.0
     container_name: kafka
     depends_on:
       - zookeeper
@@ -125,23 +127,23 @@ services:
   #---------------------------------#
   #  mockup downloader
   #---------------------------------#
-  mockup_downloader:
-    build:
-      context: ../ia-vct-mockup_downloader
-      dockerfile: Dockerfile
-    command: python app.py
-    environment:
-      ON_CLOUD: "True"
-      NUM_ASSETS_FAKE: "${NUM_ASSETS_FAKE}"
-      GENERATE_FAKE_TS_FILES: "${GENERATE_FAKE_TS_FILES}"
-      NUM_TS_FILES_PER_ASSET_FAKE: "${NUM_TS_FILES_PER_ASSET_FAKE}"
-    networks:
-      - epg_network
-    volumes:
-      - "${GLOBAL_VOLUME}:/workspace_downloader"
-      - "${MOCKUP_DOWNLOADER_VOLUME}:/etc/configmaps"
-    depends_on:
-      - controller_db_server
+  #mockup_downloader:
+  #  build:
+  #    context: ../ia-vct-mockup_downloader
+  #    dockerfile: Dockerfile
+  #  command: python app.py
+  #  environment:
+  #    ON_CLOUD: "True"
+  #    NUM_ASSETS_FAKE: "${NUM_ASSETS_FAKE}"
+  #    GENERATE_FAKE_TS_FILES: "${GENERATE_FAKE_TS_FILES}"
+  #    NUM_TS_FILES_PER_ASSET_FAKE: "${NUM_TS_FILES_PER_ASSET_FAKE}"
+  #  networks:
+  #    - epg_network
+  # volumes:
+  #    - "${GLOBAL_VOLUME}:/workspace_downloader"
+  #    - "${MOCKUP_DOWNLOADER_VOLUME}:/etc/configmaps"
+  #  depends_on:
+  #    - controller_db_server
 
   #---------------------------------#
   #  mockup pipeline
@@ -150,6 +152,7 @@ services:
     build:
       context: ../ia-vct-mockup_pipeline
       dockerfile: Dockerfile
+    container_name: pipeline
     ports:
       - "${MOCKUP_PIPELINE_PORT}:${MOCKUP_PIPELINE_PORT}"
     command: python app.py
@@ -164,10 +167,36 @@ services:
       - "${MOCKUP_PIPELINE_VOLUME}:/etc/configmaps"
       - "${GLOBAL_VOLUME}:/workspace_downloader"
 
+
+  #---------------------------------#
+  #  mockup recorder
+  #---------------------------------#
+  mockup_recorder:
+    build:
+      context: ../ia-vct-mockup_recorder
+      dockerfile: Dockerfile
+    container_name: recorder
+    ports:
+      - "8060:8060"
+    environment:
+      ON_CLOUD: "True"
+      TEST_MODE: "False"
+      EXPOSE_LOGSTASH: "False"
+      LOGGING_LEVEL: "INFO"
+      LOGSTASH_HOST: "logstash"
+      LOGSTASH_PORT: "5000"
+      RECORDER_HOST: '0.0.0.0'
+      RECORDER_PORT : 8060
+    networks:
+      - epg_network
+    volumes:
+      - "${MOCKUP_RECORDER_VOLUME}:/etc/configmaps"
+      - "${GLOBAL_VOLUME}:/workspace_downloader"
+    restart: unless-stopped
+
   #---------------------------------#
   #  Mockup adminer
   #---------------------------------#
-
   adminer: # Service that allows to check the db
     image: adminer
     networks:
@@ -185,4 +214,5 @@ volumes:
 #---------------------------------#
 networks:
   epg_network:
+    external: True
     driver: bridge
